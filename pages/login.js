@@ -69,7 +69,7 @@ export default function Login() {
       <div className="animate-fade-in" style={{ width: '100%', maxWidth: 400, padding: '0 24px' }}>
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>🐝</div>
+          <img src="/logo.png" alt="Beedika" style={{ width: 80, height: 80, objectFit: 'contain', marginBottom: 12 }} />
           <h1
             className="font-display"
             style={{ fontSize: 28, fontWeight: 800, color: '#F5A623', letterSpacing: '-0.03em' }}

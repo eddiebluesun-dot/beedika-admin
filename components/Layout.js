@@ -41,7 +41,7 @@ export default function Layout({ children, title }) {
             gap: 10,
           }}
         >
-          <span style={{ fontSize: 22, flexShrink: 0 }}>🐝</span>
+          <img src="/logo.png" alt="Beedika" style={{ width: 28, height: 28, objectFit: 'contain', flexShrink: 0 }} />
           {!collapsed && (
             <span
               className="font-display"

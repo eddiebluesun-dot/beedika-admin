@@ -6,7 +6,7 @@ export default function Document() {
     <Html lang="pt-BR">
       <Head>
         <meta name="robots" content="noindex,nofollow" />
-        <link rel="icon" href="/favicon.ico" />
+        <link rel="icon" href="/logo.png" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link

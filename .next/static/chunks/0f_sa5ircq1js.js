@@ -1,6 +1,0 @@
-__turbopack_load_page_chunks__("/financeiro", [
-  "static/chunks/10a7vm2yu1qbp.js",
-  "static/chunks/128sl698xtnfq.js",
-  "static/chunks/09id3f640iget.js",
-  "static/chunks/turbopack-146adurn_bsk1.js"
-])

@@ -1,0 +1,6 @@
+__turbopack_load_page_chunks__("/engenheiro", [
+  "static/chunks/0v7ll-1ij6pp8.js",
+  "static/chunks/128sl698xtnfq.js",
+  "static/chunks/09id3f640iget.js",
+  "static/chunks/turbopack-0pzv0i8~1a0~1.js"
+])

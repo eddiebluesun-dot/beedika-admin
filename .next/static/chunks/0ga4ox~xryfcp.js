@@ -1,0 +1,6 @@
+__turbopack_load_page_chunks__("/distribuidoras", [
+  "static/chunks/153s~04lxwur3.js",
+  "static/chunks/128sl698xtnfq.js",
+  "static/chunks/09id3f640iget.js",
+  "static/chunks/turbopack-0v3ri__lg9xd4.js"
+])

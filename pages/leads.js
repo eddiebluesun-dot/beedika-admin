@@ -1,204 +1,192 @@
-// pages/leads.js
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/router';
 import Layout from '../components/Layout';
-import { useAuth } from '../lib/auth';
-import { getLeads, updateLead } from '../lib/api';
+import DataTable from '../components/DataTable';
+import Modal from '../components/Modal';
+import { Badge, PageHeader, Btn, Field, Select } from '../components/UI';
+import { api } from '../lib/api';
 
-const STATUS_OPTIONS = ['novo', 'qualificado', 'contatado', 'enviado_parceiro', 'convertido', 'perdido'];
-const CLASS_OPTIONS = ['OURO', 'PRATA', 'BRONZE', 'DESCARTE'];
-const UF_OPTIONS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
+const STATUS_COLOR = { NOVO:'blue', QUALIFICADO:'green', RESERVADO_PAG:'yellow', VENDIDO:'gray', EXCLUSIVO_3ES:'purple', ARQUIVADO:'red' };
+const TEC_ICON = { ON_GRID:'☀️', BESS:'🔋', ACL:'⚡', TARIFA_BRANCA:'💡', ASSINATURA:'📝', ZERO_GRID:'⚡🔋', OM_LIMPEZA:'🧹' };
+const UFS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO'];
 
-function ScoreBadge({ score }) {
-  const color = score >= 80 ? '#34D399' : score >= 60 ? '#F5A623' : score >= 40 ? '#FB923C' : '#F87171';
-  return (
-    <span style={{ background: `${color}18`, color, border: `1px solid ${color}30`, borderRadius: 6, padding: '2px 8px', fontSize: 12, fontFamily: 'var(--font-dm-mono)', fontWeight: 500 }}>
-      {score ?? '—'}
-    </span>
-  );
-}
-
-function ClassBadge({ cls }) {
-  const map = { OURO: 'badge-yellow', PRATA: 'badge-slate', BRONZE: 'badge-slate', DESCARTE: 'badge-red' };
-  return <span className={`badge ${map[cls] || 'badge-slate'}`}>{cls || '—'}</span>;
-}
-
-function StatusSelect({ value, leadId, onUpdate }) {
-  const [loading, setLoading] = useState(false);
-  const handleChange = async (e) => {
-    setLoading(true);
-    try {
-      await updateLead(leadId, { status_lead: e.target.value });
-      onUpdate(leadId, { status_lead: e.target.value });
-    } catch {}
-    setLoading(false);
-  };
-  return (
-    <select
-      value={value || ''}
-      onChange={handleChange}
-      disabled={loading}
-      style={{
-        background: 'var(--dark-600)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 6,
-        color: '#E8EBF0',
-        fontSize: 12,
-        padding: '4px 8px',
-        cursor: 'pointer',
-        fontFamily: 'var(--font-dm-sans)',
-        opacity: loading ? 0.5 : 1,
-      }}
-    >
-      {STATUS_OPTIONS.map((s) => (
-        <option key={s} value={s}>{s}</option>
-      ))}
-    </select>
-  );
-}
+const COLS = [
+  { key: 'cidade',       label: 'Cidade/UF', render: (v, r) => v || r.uf ? `${v||'—'}/${r.uf||'—'}` : <span style={{color:'#EF4444',fontWeight:700}}>⚠️ —/—</span> },
+  { key: 'tecnologia',   label: 'Solução', render: (v) => `${TEC_ICON[v] || ''} ${v || '—'}` },
+  { key: 'consumo_kwh',  label: 'Consumo', render: (v) => v ? `${v} kWh` : '—' },
+  { key: 'enerscore',    label: 'EnerScore', render: (v) => v ? `${v}/100` : '—' },
+  { key: 'classificacao',label: 'Tier', render: (v) => <Badge label={v || '—'} color={v === 'OURO' ? 'amber' : v === 'PRATA' ? 'gray' : 'blue'} /> },
+  { key: 'status',       label: 'Status', render: (v) => <Badge label={v} color={STATUS_COLOR[v] || 'gray'} /> },
+  { key: 'preco_moedas', label: '🪙 Preço' },
+  { key: 'created_at',   label: 'Data', render: v => v ? new Date(v).toLocaleDateString('pt-BR') : '—' },
+];
 
 export default function Leads() {
-  const { user, loading } = useAuth();
-  const router = useRouter();
-  const [leads, setLeads] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [fetching, setFetching] = useState(true);
-  const [filters, setFilters] = useState({ status: '', uf: '', classificacao: '', page: 1 });
+  const [rows, setRows]       = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal]     = useState(false);
+  const [form, setForm]       = useState({});
+  const [saving, setSaving]   = useState(false);
+  const [erro, setErro]       = useState('');
+  const [sucesso, setSucesso] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState('');
+  const [parceiros, setParceiros] = useState([]);
 
-  useEffect(() => {
-    if (!loading && !user) router.push('/login');
-  }, [user, loading]);
+  async function load() {
+    setLoading(true);
+    try {
+      const f = filtroStatus ? `status=${filtroStatus}` : '';
+      setRows((await api.leads(1, f))?.leads || []);
+    } catch(e) { setErro(e.message); }
+    finally { setLoading(false); }
+  }
 
-  useEffect(() => {
-    if (!user) return;
-    setFetching(true);
-    const params = { limit: 50, ...filters };
-    Object.keys(params).forEach((k) => !params[k] && delete params[k]);
-    getLeads(params)
-      .then((d) => { setLeads(d.leads || []); setTotal(d.total || 0); })
-      .catch(console.error)
-      .finally(() => setFetching(false));
-  }, [user, filters]);
+  async function loadParceiros() {
+    try {
+      const d = await api.parceiros();
+      setParceiros(d?.parceiros || []);
+    } catch {}
+  }
 
-  const handleUpdate = (id, changes) => {
-    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...changes } : l)));
-  };
+  useEffect(() => { load(); loadParceiros(); }, [filtroStatus]);
 
-  const setFilter = (key, val) => setFilters((f) => ({ ...f, [key]: val, page: 1 }));
+  function abrirEditar(row) {
+    setForm({
+      ...row,
+      cidade: row.cidade || '',
+      uf: row.uf || '',
+      partner_id_transferir: '',
+    });
+    setModal(true);
+    setErro('');
+  }
 
-  if (loading || !user) return null;
+  async function salvar() {
+    setSaving(true); setErro('');
+    try {
+      const payload = {
+        status: form.status,
+        preco_moedas: Number(form.preco_moedas),
+        classificacao: form.classificacao,
+        cidade: form.cidade || null,
+        uf: form.uf || null,
+        tecnologia: form.tecnologia || null,
+      };
+      if (form.partner_id_transferir) payload.partner_id_transferir = form.partner_id_transferir;
+      await api.atualizarLead(form.id, payload);
+      setSucesso('Lead atualizado com sucesso!');
+      setModal(false);
+      await load();
+    } catch(e) { setErro(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function excluir(row) {
+    if (!confirm('Excluir este lead permanentemente?')) return;
+    try { await api.excluirLead(row.id); await load(); }
+    catch(e) { alert(e.message); }
+  }
+
+  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const semCidade = rows.filter(r => !r.cidade || !r.uf).length;
 
   return (
     <Layout title="Leads">
-      <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <PageHeader title="Leads" subtitle="Marketplace de leads qualificados" />
 
-        {/* Filters */}
-        <div className="card" style={{ padding: '16px 20px', display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: 'var(--slate)', fontFamily: 'var(--font-syne)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Filtros
-          </span>
-
-          {[
-            { key: 'status', label: 'Status', options: STATUS_OPTIONS },
-            { key: 'classificacao', label: 'Classe', options: CLASS_OPTIONS },
-            { key: 'uf', label: 'UF', options: UF_OPTIONS },
-          ].map(({ key, label, options }) => (
-            <select
-              key={key}
-              value={filters[key]}
-              onChange={(e) => setFilter(key, e.target.value)}
-              style={{ background: 'var(--dark-700)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 7, color: filters[key] ? '#E8EBF0' : 'var(--slate)', fontSize: 13, padding: '7px 10px', cursor: 'pointer', fontFamily: 'var(--font-dm-sans)' }}
-            >
-              <option value="">{label}</option>
-              {options.map((o) => <option key={o} value={o}>{o}</option>)}
-            </select>
-          ))}
-
-          {(filters.status || filters.uf || filters.classificacao) && (
-            <button
-              className="btn-ghost"
-              onClick={() => setFilters({ status: '', uf: '', classificacao: '', page: 1 })}
-              style={{ fontSize: 12, padding: '6px 12px' }}
-            >
-              Limpar
-            </button>
-          )}
-
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--slate)', fontFamily: 'var(--font-dm-mono)' }}>
-            {total} leads
-          </span>
+      {semCidade > 0 && (
+        <div style={{background:'#FEF3C7',border:'1px solid #FDE68A',borderRadius:10,padding:'12px 16px',fontSize:13,color:'#92400E',marginBottom:16,display:'flex',alignItems:'center',gap:8}}>
+          <span>⚠️</span>
+          <span><strong>{semCidade} lead(s)</strong> sem Cidade/UF registrada. Edite para corrigir — isso é essencial para o leilão por região.</span>
         </div>
+      )}
 
-        {/* Table */}
-        <div className="card" style={{ overflow: 'hidden' }}>
-          {fetching ? (
-            <div style={{ padding: 32, display: 'flex', alignItems: 'center', gap: 10, color: 'var(--slate)' }}>
-              <div style={{ width: 16, height: 16, border: '2px solid var(--honey)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-              Carregando leads...
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                    {['Nome', 'Telefone', 'Cidade/UF', 'Consumo', 'Valor', 'EnerScore', 'Classe', 'Status', 'Data'].map((h) => (
-                      <th key={h} style={{ padding: '10px 14px', textAlign: 'left', color: 'var(--slate)', fontFamily: 'var(--font-syne)', fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {leads.length === 0 ? (
-                    <tr>
-                      <td colSpan={9} style={{ padding: '32px', color: 'var(--slate)', textAlign: 'center' }}>
-                        Nenhum lead encontrado
-                      </td>
-                    </tr>
-                  ) : (
-                    leads.map((lead) => (
-                      <tr
-                        key={lead.id}
-                        style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', transition: 'background 0.15s' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        <td style={{ padding: '11px 14px', color: '#E8EBF0', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                          {lead.nome_completo || '—'}
-                        </td>
-                        <td style={{ padding: '11px 14px', color: 'var(--slate)', fontFamily: 'var(--font-dm-mono)', fontSize: 12 }}>
-                          {lead.telefone || '—'}
-                        </td>
-                        <td style={{ padding: '11px 14px', color: 'var(--slate)', whiteSpace: 'nowrap' }}>
-                          {lead.cidade ? `${lead.cidade}/${lead.uf}` : lead.uf || '—'}
-                        </td>
-                        <td style={{ padding: '11px 14px', color: 'var(--slate)', fontFamily: 'var(--font-dm-mono)', fontSize: 12 }}>
-                          {lead.consumo_kwh ? `${lead.consumo_kwh} kWh` : '—'}
-                        </td>
-                        <td style={{ padding: '11px 14px', color: 'var(--slate)', fontFamily: 'var(--font-dm-mono)', fontSize: 12 }}>
-                          {lead.valor_conta ? `R$ ${lead.valor_conta.toLocaleString('pt-BR')}` : '—'}
-                        </td>
-                        <td style={{ padding: '11px 14px' }}>
-                          <ScoreBadge score={lead.enerscore} />
-                        </td>
-                        <td style={{ padding: '11px 14px' }}>
-                          <ClassBadge cls={lead.classificacao_lead} />
-                        </td>
-                        <td style={{ padding: '11px 14px' }}>
-                          <StatusSelect value={lead.status_lead} leadId={lead.id} onUpdate={handleUpdate} />
-                        </td>
-                        <td style={{ padding: '11px 14px', color: 'var(--slate)', fontFamily: 'var(--font-dm-mono)', fontSize: 11, whiteSpace: 'nowrap' }}>
-                          {lead.created_at ? new Date(lead.created_at).toLocaleDateString('pt-BR') : '—'}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+      {sucesso && <div style={{background:'#ECFDF5',border:'1px solid rgba(5,150,105,0.2)',borderRadius:10,padding:'10px 16px',fontSize:13,color:'#059669',marginBottom:16,display:'flex',justifyContent:'space-between'}}>
+        {sucesso} <span style={{cursor:'pointer'}} onClick={()=>setSucesso('')}>✕</span>
+      </div>}
+      {erro && !modal && <div style={{background:'#fee2e2',color:'#991b1b',padding:'12px 16px',borderRadius:8,marginBottom:16}}>{erro}</div>}
+
+      {/* Filtros */}
+      <div style={{display:'flex',gap:10,marginBottom:20,flexWrap:'wrap'}}>
+        {['','NOVO','QUALIFICADO','VENDIDO','EXCLUSIVO_3ES','ARQUIVADO'].map(s => (
+          <button key={s} onClick={() => setFiltroStatus(s)} style={{
+            padding:'8px 16px', borderRadius:8, border:'none', cursor:'pointer', fontSize:13,
+            background: filtroStatus===s ? '#0a0a0a' : '#fff',
+            color: filtroStatus===s ? '#f5c842' : '#555',
+            border: filtroStatus===s ? 'none' : '1px solid #e0ddd6',
+          }}>{s || 'Todos'}</button>
+        ))}
+        {semCidade > 0 && (
+          <button onClick={() => {}} style={{padding:'8px 16px',borderRadius:8,border:'1px solid #FDE68A',cursor:'pointer',fontSize:13,background:'#FEF3C7',color:'#92400E',fontWeight:600}}>
+            ⚠️ Sem cidade ({semCidade})
+          </button>
+        )}
       </div>
+
+      <DataTable columns={COLS} rows={rows} loading={loading} onEdit={abrirEditar} onDelete={excluir} />
+
+      <Modal open={modal} title="Editar lead" onClose={() => setModal(false)} onSave={salvar} saving={saving}>
+        {erro && <div style={{background:'#fee2e2',color:'#991b1b',padding:'10px 14px',borderRadius:8,marginBottom:16,fontSize:13}}>{erro}</div>}
+
+        {/* Aviso se sem cidade */}
+        {(!form.cidade || !form.uf) && (
+          <div style={{background:'#FEF3C7',border:'1px solid #FDE68A',borderRadius:8,padding:'10px 14px',fontSize:13,color:'#92400E',marginBottom:16}}>
+            ⚠️ Este lead está sem Cidade/UF. Preencha para que apareça no leilão correto.
+          </div>
+        )}
+
+        {/* Cidade / UF */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 80px',gap:12,marginBottom:16}}>
+          <Field label="Cidade">
+            <input value={form.cidade||''} onChange={set('cidade')}
+              placeholder="Ex: Campinas"
+              style={{width:'100%',padding:'10px 14px',border:'1px solid #e0ddd6',borderRadius:8,fontSize:14,boxSizing:'border-box',fontFamily:'inherit'}} />
+          </Field>
+          <Field label="UF">
+            <select value={form.uf||''} onChange={set('uf')}
+              style={{width:'100%',padding:'10px 8px',border:'1px solid #e0ddd6',borderRadius:8,fontSize:14,background:'white',fontFamily:'inherit'}}>
+              <option value="">—</option>
+              {UFS.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </Field>
+        </div>
+
+        <Field label="Status">
+          <Select value={form.status} onChange={set('status')}>
+            {['NOVO','QUALIFICADO','RESERVADO_PAG','VENDIDO','EXCLUSIVO_3ES','ARQUIVADO'].map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Classificação">
+          <Select value={form.classificacao} onChange={set('classificacao')}>
+            {['BRONZE','PRATA','OURO'].map(c => <option key={c} value={c}>{c}</option>)}
+          </Select>
+        </Field>
+        <Field label="Tecnologia">
+          <Select value={form.tecnologia||''} onChange={set('tecnologia')}>
+            <option value="">Manter atual</option>
+            {['ON_GRID','BESS','ACL','TARIFA_BRANCA','ASSINATURA'].map(t => <option key={t} value={t}>{TEC_ICON[t]} {t}</option>)}
+          </Select>
+        </Field>
+        <Field label="Preço (moedas)">
+          <input type="number" value={form.preco_moedas??1} onChange={set('preco_moedas')} min={0}
+            style={{width:'100%',padding:'10px 14px',border:'1px solid #e0ddd6',borderRadius:8,fontSize:14,boxSizing:'border-box'}} />
+        </Field>
+
+        {/* Transferência */}
+        <Field label="Transferir para parceiro (opcional)">
+          <select value={form.partner_id_transferir||''} onChange={set('partner_id_transferir')}
+            style={{width:'100%',padding:'10px 14px',border:'1px solid #e0ddd6',borderRadius:8,fontSize:14,background:'white',fontFamily:'inherit'}}>
+            <option value="">Não transferir</option>
+            {parceiros.map(p => (
+              <option key={p.user_id||p.id} value={p.user_id||p.id}>
+                {p.nome_responsavel} — {p.cidade}/{p.uf}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </Modal>
     </Layout>
   );
 }

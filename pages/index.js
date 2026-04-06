@@ -1,180 +1,132 @@
-// pages/index.js
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../components/Layout';
-import { useAuth } from '../lib/auth';
-import { getDashboard } from '../lib/api';
+import { KpiCard, PageHeader } from '../components/UI';
+import { api } from '../lib/api';
+import { getToken } from '../lib/auth';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } from 'recharts';
 
-function KpiCard({ icon, label, value, sub, color = '#F5A623' }) {
-  return (
-    <div
-      className="card card-hover"
-      style={{ padding: '20px 24px' }}
-    >
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--slate)', fontFamily: 'var(--font-syne)', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
-            {label}
-          </div>
-          <div
-            className="font-display"
-            style={{ fontSize: 32, fontWeight: 800, color: '#E8EBF0', letterSpacing: '-0.03em', lineHeight: 1 }}
-          >
-            {value ?? '—'}
-          </div>
-          {sub && (
-            <div style={{ fontSize: 12, color: 'var(--slate)', marginTop: 6 }}>{sub}</div>
-          )}
-        </div>
-        <span style={{ fontSize: 22, opacity: 0.8 }}>{icon}</span>
-      </div>
-    </div>
-  );
-}
-
-function ScoreBadge({ score }) {
-  const color = score >= 80 ? '#34D399' : score >= 60 ? '#F5A623' : score >= 40 ? '#FB923C' : '#F87171';
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        background: `${color}18`,
-        color,
-        border: `1px solid ${color}30`,
-        borderRadius: 6,
-        padding: '2px 8px',
-        fontSize: 12,
-        fontFamily: 'var(--font-dm-mono)',
-        fontWeight: 500,
-      }}
-    >
-      {score ?? '—'}
-    </span>
-  );
-}
-
-function LeadStatusBadge({ status }) {
-  const map = {
-    novo: 'badge-yellow',
-    qualificado: 'badge-green',
-    enviado_parceiro: 'badge-blue',
-    convertido: 'badge-green',
-    perdido: 'badge-red',
-  };
-  return <span className={`badge ${map[status] || 'badge-slate'}`}>{status}</span>;
-}
+const SCORE_COLORS = { 'Excelente': '#22c55e', 'Bom': '#84cc16', 'Atenção': '#f59e0b', 'Crítico': '#ef4444' };
 
 export default function Dashboard() {
-  const { user, loading } = useAuth();
   const router = useRouter();
-  const [data, setData] = useState(null);
-  const [fetching, setFetching] = useState(true);
-  const [error, setError] = useState('');
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState('');
 
   useEffect(() => {
-    if (!loading && !user) router.push('/login');
-  }, [user, loading]);
+    if (!getToken()) { router.replace('/login'); return; }
+    api.stats()
+      .then(setStats)
+      .catch(e => setErro(e.message))
+      .finally(() => setLoading(false));
+  }, []);
 
-  useEffect(() => {
-    if (!user) return;
-    getDashboard()
-      .then(setData)
-      .catch((e) => setError(e.message))
-      .finally(() => setFetching(false));
-  }, [user]);
+  const kpis = [
+    { icon: '👥', label: 'Clientes ativos',     value: stats?.clientes_total    ?? '—', color: '#6366f1' },
+    { icon: '🎯', label: 'Leads qualificados',  value: stats?.leads_qualificados ?? '—', color: '#f59e0b' },
+    { icon: '🤝', label: 'Parceiros ativos',    value: stats?.parceiros_ativos   ?? '—', color: '#10b981' },
+    { icon: '⚡', label: 'EnerScore médio',     value: stats?.enerscore_medio    ? `${stats.enerscore_medio}/100` : '—', color: '#f5c842' },
+    { icon: '📄', label: 'Análises realizadas', value: stats?.bills_total         ?? '—', color: '#8b5cf6' },
+    { icon: '💰', label: 'Leads vendidos',       value: stats?.leads_vendidos      ?? '—', color: '#ec4899' },
+  ];
 
-  if (loading || !user) return null;
-
-  const kpis = data?.kpis || {};
-  const leads = data?.ultimos_leads || [];
+  const chartData = stats?.leads_por_mes ?? [];
+  const distData = stats?.por_distribuidora ?? [];
 
   return (
     <Layout title="Dashboard">
-      {fetching ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--slate)' }}>
-          <div style={{ width: 16, height: 16, border: '2px solid var(--honey)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-          Carregando...
-        </div>
-      ) : error ? (
-        <div className="badge badge-red" style={{ fontSize: 13, padding: '8px 14px' }}>
-          Erro: {error}
-        </div>
-      ) : (
-        <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <PageHeader title="Dashboard" subtitle={`Beedika — Visão geral da plataforma`} />
 
-          {/* KPIs grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16 }}>
-            <KpiCard icon="⚡" label="Total Leads" value={kpis.total_leads?.toLocaleString('pt-BR')} sub={`${kpis.leads_altos || 0} score alto`} />
-            <KpiCard icon="◉" label="Clientes" value={kpis.total_clientes?.toLocaleString('pt-BR')} sub={`${kpis.assinaturas_ativas || 0} ativos`} />
-            <KpiCard icon="📄" label="Contas" value={kpis.total_bills?.toLocaleString('pt-BR')} />
-            <KpiCard icon="◆" label="Parceiros" value={kpis.total_parceiros?.toLocaleString('pt-BR')} />
-            <KpiCard icon="🐝" label="EnerScore Médio" value={kpis.enerscore_medio} sub="média geral" />
-            <KpiCard icon="💰" label="Economia Total" value={kpis.economia_total ? `R$\u00A0${(kpis.economia_total / 1000).toFixed(1)}k` : '—'} sub="potencial mensal" />
-          </div>
+      {erro && (
+        <div style={{ background: '#fee2e2', color: '#991b1b', padding: '12px 16px', borderRadius: 8, marginBottom: 20 }}>
+          {erro} — Verifique se está logado como Admin.
+        </div>
+      )}
 
-          {/* Últimos Leads */}
-          <div className="card" style={{ overflow: 'hidden' }}>
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span className="font-display" style={{ fontSize: 14, fontWeight: 700, color: '#E8EBF0' }}>
-                Últimos Leads
-              </span>
-              <a href="/leads" style={{ fontSize: 12, color: 'var(--honey)', textDecoration: 'none' }}>
-                Ver todos →
-              </a>
+      {/* KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, marginBottom: 28 }}>
+        {kpis.map((k, i) => <KpiCard key={i} {...k} />)}
+      </div>
+
+      {/* Charts */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
+        {/* Leads por mês */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 24, border: '1px solid #e8e5dc' }}>
+          <h3 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 600 }}>📈 Leads por mês</h3>
+          {loading ? <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc' }}>Carregando...</div> : (
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={chartData}>
+                <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip />
+                <Bar dataKey="total" fill="#f5c842" radius={[4,4,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* Por distribuidora */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 24, border: '1px solid #e8e5dc' }}>
+          <h3 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 600 }}>🏭 Por distribuidora</h3>
+          {loading ? <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc' }}>Carregando...</div> : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {distData.slice(0,6).map((d, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 13, width: 120, flexShrink: 0, color: '#555', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {d.distribuidora || 'Outros'}
+                  </span>
+                  <div style={{ flex: 1, background: '#f0ede4', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', background: '#f5c842', width: `${Math.min(100, (d.total / (distData[0]?.total || 1)) * 100)}%`, borderRadius: 4 }} />
+                  </div>
+                  <span style={{ fontSize: 13, color: '#888', width: 30, textAlign: 'right' }}>{d.total}</span>
+                </div>
+              ))}
+              {distData.length === 0 && <div style={{ color: '#ccc', fontSize: 14 }}>Sem dados</div>}
             </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                    {['Nome', 'Cidade', 'EnerScore', 'Economia/mês', 'Status', 'Data'].map((h) => (
-                      <th key={h} style={{ padding: '10px 16px', textAlign: 'left', color: 'var(--slate)', fontFamily: 'var(--font-syne)', fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {leads.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} style={{ padding: '24px 16px', color: 'var(--slate)', textAlign: 'center' }}>
-                        Nenhum lead ainda
-                      </td>
-                    </tr>
-                  ) : (
-                    leads.map((lead) => (
-                      <tr
-                        key={lead.id}
-                        style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', transition: 'background 0.15s' }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        <td style={{ padding: '12px 16px', color: '#E8EBF0', fontWeight: 500 }}>
-                          {lead.nome_completo || '—'}
-                        </td>
-                        <td style={{ padding: '12px 16px', color: 'var(--slate)' }}>
-                          {lead.cidade ? `${lead.cidade}/${lead.uf}` : '—'}
-                        </td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <ScoreBadge score={lead.enerscore} />
-                        </td>
-                        <td style={{ padding: '12px 16px', color: '#34D399', fontFamily: 'var(--font-dm-mono)', fontSize: 12 }}>
-                          {lead.economia_potencial ? `R$ ${lead.economia_potencial.toLocaleString('pt-BR')}` : '—'}
-                        </td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <LeadStatusBadge status={lead.status_lead} />
-                        </td>
-                        <td style={{ padding: '12px 16px', color: 'var(--slate)', fontFamily: 'var(--font-dm-mono)', fontSize: 11 }}>
-                          {lead.created_at ? new Date(lead.created_at).toLocaleDateString('pt-BR') : '—'}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+          )}
+        </div>
+      </div>
+
+      {/* EnerScore distribution */}
+      {stats?.por_classificacao && (
+        <div style={{ background: '#fff', borderRadius: 16, padding: 24, border: '1px solid #e8e5dc', marginBottom: 24 }}>
+          <h3 style={{ margin: '0 0 20px', fontSize: 16, fontWeight: 600 }}>🎯 Distribuição EnerScore</h3>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            {stats.por_classificacao.map((c, i) => (
+              <div key={i} style={{
+                background: (SCORE_COLORS[c.classificacao] || '#888') + '15',
+                border: `1px solid ${SCORE_COLORS[c.classificacao] || '#888'}40`,
+                borderRadius: 12, padding: '16px 24px', textAlign: 'center', flex: 1, minWidth: 140,
+              }}>
+                <div style={{ fontSize: 28, fontWeight: 700, color: SCORE_COLORS[c.classificacao] || '#888' }}>{c.total}</div>
+                <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>{c.classificacao}</div>
+              </div>
+            ))}
           </div>
         </div>
       )}
+
+      {/* Ações rápidas */}
+      <div style={{ background: '#0a0a0a', borderRadius: 16, padding: 24, color: '#fff' }}>
+        <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600, color: '#f5c842' }}>⚡ Ações rápidas</h3>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {[
+            { label: '+ Novo usuário', href: '/usuarios' },
+            { label: '🎯 Ver leads', href: '/leads' },
+            { label: '📊 Relatórios', href: '/relatorios' },
+            { label: '🤖 Engenheiro IA', href: '/engenheiro' },
+          ].map((a, i) => (
+            <a key={i} href={a.href} style={{
+              background: '#1a1a1a', color: '#ddd', padding: '10px 18px',
+              borderRadius: 8, textDecoration: 'none', fontSize: 14,
+              border: '1px solid #333', transition: 'border-color 0.15s',
+            }}>
+              {a.label}
+            </a>
+          ))}
+        </div>
+      </div>
     </Layout>
   );
 }
